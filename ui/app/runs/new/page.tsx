@@ -30,6 +30,14 @@ export default function NewRunPage() {
     sampleType: "consecutive" as SampleType,
     perCategory: "2",
     limit: "",
+    parallelism: {
+      default: undefined as number | undefined,
+      ingest: undefined as number | undefined,
+      indexing: undefined as number | undefined,
+      search: undefined as number | undefined,
+      answer: undefined as number | undefined,
+      evaluate: undefined as number | undefined,
+    },
   })
 
   const [advancedForm, setAdvancedForm] = useState({
@@ -42,6 +50,8 @@ export default function NewRunPage() {
   const [editingAdvancedRunId, setEditingAdvancedRunId] = useState(false)
   const [editingJudgeModel, setEditingJudgeModel] = useState(false)
   const [editingAnsweringModel, setEditingAnsweringModel] = useState(false)
+  const [showPerformanceSettings, setShowPerformanceSettings] = useState(false)
+  const [showPerPhaseSettings, setShowPerPhaseSettings] = useState(false)
   const runIdInputRef = useRef<HTMLInputElement>(null)
   const advancedRunIdInputRef = useRef<HTMLInputElement>(null)
 
@@ -183,6 +193,22 @@ export default function NewRunPage() {
     }
     console.log("Submitting with sampling config:", sampling)
 
+    const parallelism = (form.parallelism.default !== undefined ||
+                          form.parallelism.ingest !== undefined ||
+                          form.parallelism.indexing !== undefined ||
+                          form.parallelism.search !== undefined ||
+                          form.parallelism.answer !== undefined ||
+                          form.parallelism.evaluate !== undefined)
+      ? {
+          ...(form.parallelism.default !== undefined && { default: form.parallelism.default }),
+          ...(form.parallelism.ingest !== undefined && { ingest: form.parallelism.ingest }),
+          ...(form.parallelism.indexing !== undefined && { indexing: form.parallelism.indexing }),
+          ...(form.parallelism.search !== undefined && { search: form.parallelism.search }),
+          ...(form.parallelism.answer !== undefined && { answer: form.parallelism.answer }),
+          ...(form.parallelism.evaluate !== undefined && { evaluate: form.parallelism.evaluate }),
+        }
+      : undefined
+
     try {
       setSubmitting(true)
       setError(null)
@@ -194,6 +220,7 @@ export default function NewRunPage() {
         judgeModel,
         answeringModel,
         sampling,
+        parallelism,
         force: activeTab === "new",
         fromPhase,
         sourceRunId,
@@ -436,6 +463,89 @@ export default function NewRunPage() {
                     </div>
                   )}
                 </div>
+
+                <div className="mt-6 pt-4 border-t border-[#333333]">
+                  <button
+                    type="button"
+                    onClick={() => setShowPerformanceSettings(!showPerformanceSettings)}
+                    className="flex items-center gap-2 text-sm font-medium text-text-primary mb-3 hover:text-accent transition-colors"
+                  >
+                    <svg className={`w-4 h-4 transition-transform ${showPerformanceSettings ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                    Performance Settings
+                  </button>
+
+                  {showPerformanceSettings && (
+                    <div className="ml-6 space-y-3 p-4 bg-[#1a1a1a] border border-[#333333] rounded">
+                      <p className="text-xs text-text-muted">
+                        Configure parallelism for this run. Leave empty to use source run settings or provider defaults.
+                      </p>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-text-primary mb-2">
+                            Default Parallelism
+                          </label>
+                          <input
+                            type="number"
+                            className="w-full px-3 py-2 text-sm bg-[#222222] border border-[#444444] rounded text-text-primary focus:outline-none focus:border-accent"
+                            value={form.parallelism.default ?? ""}
+                            onChange={(e) => setForm({
+                              ...form,
+                              parallelism: { ...form.parallelism, default: e.target.value ? parseInt(e.target.value) : undefined }
+                            })}
+                            placeholder="1 (sequential)"
+                            min="1"
+                          />
+                          <p className="text-xs text-text-muted mt-1">Applies to all phases unless overridden</p>
+                        </div>
+
+                        <div className="flex items-end">
+                          <button
+                            type="button"
+                            onClick={() => setShowPerPhaseSettings(!showPerPhaseSettings)}
+                            className="text-sm text-accent hover:text-accent/80 transition-colors mb-2"
+                          >
+                            {showPerPhaseSettings ? "Hide" : "Show"} per-phase settings
+                          </button>
+                        </div>
+                      </div>
+
+                      {showPerPhaseSettings && (
+                        <div className="grid grid-cols-3 gap-3 pt-2 border-t border-[#333333]">
+                          {(["ingest", "indexing", "search", "answer", "evaluate"] as const).map(phase => (
+                            <div key={phase}>
+                              <label className="block text-xs font-medium text-text-secondary mb-1 capitalize">
+                                {phase}
+                              </label>
+                              <input
+                                type="number"
+                                className="w-full px-2 py-1.5 text-sm bg-[#222222] border border-[#444444] rounded text-text-primary focus:outline-none focus:border-accent"
+                                value={form.parallelism[phase] ?? ""}
+                                onChange={(e) => setForm({
+                                  ...form,
+                                  parallelism: { ...form.parallelism, [phase]: e.target.value ? parseInt(e.target.value) : undefined }
+                                })}
+                                placeholder="—"
+                                min="1"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="flex items-start gap-2 p-3 bg-blue-500/5 border border-blue-500/20 rounded">
+                        <svg className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div className="text-xs text-blue-200">
+                          <strong>Recommendations:</strong> Ingest/Indexing: 50-200, Search: 20-50, Answer/Evaluate: 10-20
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </>
             )}
           </>
@@ -602,6 +712,89 @@ export default function NewRunPage() {
                     placeholder="e.g. 100"
                     min="1"
                   />
+                </div>
+              )}
+            </div>
+
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowPerformanceSettings(!showPerformanceSettings)}
+                className="flex items-center gap-2 text-sm font-medium text-text-primary mb-2 hover:text-accent transition-colors"
+              >
+                <svg className={`w-4 h-4 transition-transform ${showPerformanceSettings ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                Performance Settings (Optional)
+              </button>
+
+              {showPerformanceSettings && (
+                <div className="ml-6 space-y-4 p-4 bg-[#1a1a1a] border border-[#333333] rounded">
+                  <p className="text-xs text-text-muted">
+                    Configure parallelism for faster execution. Default is sequential processing (1).
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-text-primary mb-2">
+                        Default Parallelism
+                      </label>
+                      <input
+                        type="number"
+                        className="w-full px-3 py-2 text-sm bg-[#222222] border border-[#444444] rounded text-text-primary focus:outline-none focus:border-accent"
+                        value={form.parallelism.default ?? ""}
+                        onChange={(e) => setForm({
+                          ...form,
+                          parallelism: { ...form.parallelism, default: e.target.value ? parseInt(e.target.value) : undefined }
+                        })}
+                        placeholder="1 (sequential)"
+                        min="1"
+                      />
+                      <p className="text-xs text-text-muted mt-1">Applies to all phases unless overridden</p>
+                    </div>
+
+                    <div className="flex items-end">
+                      <button
+                        type="button"
+                        onClick={() => setShowPerPhaseSettings(!showPerPhaseSettings)}
+                        className="text-sm text-accent hover:text-accent/80 transition-colors mb-2"
+                      >
+                        {showPerPhaseSettings ? "Hide" : "Show"} per-phase settings
+                      </button>
+                    </div>
+                  </div>
+
+                  {showPerPhaseSettings && (
+                    <div className="grid grid-cols-3 gap-3 pt-2 border-t border-[#333333]">
+                      {(["ingest", "indexing", "search", "answer", "evaluate"] as const).map(phase => (
+                        <div key={phase}>
+                          <label className="block text-xs font-medium text-text-secondary mb-1 capitalize">
+                            {phase}
+                          </label>
+                          <input
+                            type="number"
+                            className="w-full px-2 py-1.5 text-sm bg-[#222222] border border-[#444444] rounded text-text-primary focus:outline-none focus:border-accent"
+                            value={form.parallelism[phase] ?? ""}
+                            onChange={(e) => setForm({
+                              ...form,
+                              parallelism: { ...form.parallelism, [phase]: e.target.value ? parseInt(e.target.value) : undefined }
+                            })}
+                            placeholder="—"
+                            min="1"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex items-start gap-2 p-3 bg-blue-500/5 border border-blue-500/20 rounded">
+                    <svg className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <div className="text-xs text-blue-200">
+                      <strong>Recommendations:</strong> Ingest/Indexing: 50-200, Search: 20-50, Answer/Evaluate: 10-20
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

@@ -1,6 +1,7 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, cpSync } from "fs"
+import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, cpSync, renameSync, unlinkSync } from "fs"
 import { join } from "path"
 import type { RunCheckpoint, QuestionCheckpoint, PhaseStatus, PhaseId, RunStatus, SamplingConfig } from "../types/checkpoint"
+import type { ParallelismConfig } from "../types/parallelism"
 import { PHASE_ORDER } from "../types/checkpoint"
 import { logger } from "../utils/logger"
 
@@ -8,6 +9,7 @@ const RUNS_DIR = "./data/runs"
 
 export class CheckpointManager {
     private basePath: string
+    private saveLock = new Map<string, Promise<void>>()
 
     constructor(basePath: string = RUNS_DIR) {
         this.basePath = basePath
@@ -43,15 +45,45 @@ export class CheckpointManager {
     }
 
     save(checkpoint: RunCheckpoint): void {
+        const currentQueue = this.saveLock.get(checkpoint.runId) || Promise.resolve()
+        const nextQueue = currentQueue.then(() => this._performSave(checkpoint))
+        this.saveLock.set(checkpoint.runId, nextQueue)
+
+        nextQueue.finally(() => {
+            if (this.saveLock.get(checkpoint.runId) === nextQueue) {
+                this.saveLock.delete(checkpoint.runId)
+            }
+        })
+    }
+
+    private async _performSave(checkpoint: RunCheckpoint): Promise<void> {
         const runPath = this.getRunPath(checkpoint.runId)
         const path = this.getCheckpointPath(checkpoint.runId)
+        const tempPath = path + ".tmp"
 
         if (!existsSync(runPath)) {
             mkdirSync(runPath, { recursive: true })
         }
 
         checkpoint.updatedAt = new Date().toISOString()
-        writeFileSync(path, JSON.stringify(checkpoint, null, 2))
+
+        try {
+            writeFileSync(tempPath, JSON.stringify(checkpoint, null, 2))
+            renameSync(tempPath, path)
+        } catch (e) {
+            try {
+                unlinkSync(tempPath)
+            } catch {}
+            throw e
+        }
+    }
+
+    async flush(runId?: string): Promise<void> {
+        if (runId) {
+            await this.saveLock.get(runId)
+        } else {
+            await Promise.all(Array.from(this.saveLock.values()))
+        }
     }
 
     create(
@@ -60,7 +92,7 @@ export class CheckpointManager {
         benchmark: string,
         judge: string,
         answeringModel: string,
-        options?: { limit?: number; sampling?: SamplingConfig; targetQuestionIds?: string[]; dataSourceRunId?: string; status?: RunStatus }
+        options?: { limit?: number; sampling?: SamplingConfig; targetQuestionIds?: string[]; dataSourceRunId?: string; status?: RunStatus; parallelism?: ParallelismConfig }
     ): RunCheckpoint {
         const checkpoint: RunCheckpoint = {
             runId,
@@ -75,6 +107,7 @@ export class CheckpointManager {
             limit: options?.limit,
             sampling: options?.sampling,
             targetQuestionIds: options?.targetQuestionIds,
+            parallelism: options?.parallelism,
             questions: {},
         }
 
@@ -249,7 +282,9 @@ export class CheckpointManager {
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             limit: source.limit,
+            sampling: source.sampling,
             targetQuestionIds: source.targetQuestionIds,
+            parallelism: source.parallelism,
             questions: newQuestions,
         }
 

@@ -2,7 +2,8 @@ import type { Provider } from "../../types/provider"
 import type { RunCheckpoint } from "../../types/checkpoint"
 import { CheckpointManager } from "../checkpoint"
 import { logger } from "../../utils/logger"
-import { shouldStop } from "../../server/runState"
+import { ParallelExecutor } from "../parallel"
+import { resolveParallelism } from "../../types/parallelism"
 
 export async function runIndexingPhase(
     provider: Provider,
@@ -15,7 +16,6 @@ export async function runIndexingPhase(
         ? allQuestions.filter(q => questionIds.includes(q.questionId))
         : allQuestions
 
-    // Filter to questions that completed ingest but not indexing
     const toIndex = targetQuestions.filter(q =>
         q.phases.ingest.status === "completed" &&
         q.phases.indexing.status !== "completed"
@@ -26,56 +26,61 @@ export async function runIndexingPhase(
         return
     }
 
-    logger.info(`Awaiting indexing for ${toIndex.length} questions...`)
+    const concurrency = resolveParallelism(
+        "indexing",
+        checkpoint.parallelism,
+        provider.defaultParallelism
+    )
 
-    for (let i = 0; i < toIndex.length; i++) {
-        // Check for stop signal
-        if (shouldStop(checkpoint.runId)) {
-            logger.info(`Run ${checkpoint.runId} stopped by user`)
-            throw new Error(`Run stopped by user. Resume with the same run ID.`)
-        }
+    logger.info(`Awaiting indexing for ${toIndex.length} questions (concurrency: ${concurrency})...`)
 
-        const question = toIndex[i]
-        const ingestResult = question.phases.ingest.ingestResult
+    await ParallelExecutor.executeParallel(
+        toIndex,
+        concurrency,
+        checkpoint.runId,
+        "indexing",
+        async ({ item: question, index, total }) => {
+            const ingestResult = question.phases.ingest.ingestResult
 
-        // Skip if no documents/tasks to track
-        if (!ingestResult || (ingestResult.documentIds.length === 0 && !ingestResult.taskIds?.length)) {
+            if (!ingestResult || (ingestResult.documentIds.length === 0 && !ingestResult.taskIds?.length)) {
+                checkpointManager.updatePhase(checkpoint, question.questionId, "indexing", {
+                    status: "completed",
+                    completedAt: new Date().toISOString(),
+                    durationMs: 0,
+                })
+                logger.progress(index + 1, total, `Indexed ${question.questionId} (0ms)`)
+                return { questionId: question.questionId, durationMs: 0 }
+            }
+
+            const startTime = Date.now()
             checkpointManager.updatePhase(checkpoint, question.questionId, "indexing", {
-                status: "completed",
-                completedAt: new Date().toISOString(),
-                durationMs: 0,
-            })
-            logger.progress(i + 1, toIndex.length, `Indexed ${question.questionId} (0ms)`)
-            continue
-        }
-
-        const startTime = Date.now()
-        checkpointManager.updatePhase(checkpoint, question.questionId, "indexing", {
-            status: "in_progress",
-            startedAt: new Date().toISOString(),
-        })
-
-        try {
-            await provider.awaitIndexing(ingestResult, question.containerTag)
-
-            const durationMs = Date.now() - startTime
-            checkpointManager.updatePhase(checkpoint, question.questionId, "indexing", {
-                status: "completed",
-                completedAt: new Date().toISOString(),
-                durationMs,
+                status: "in_progress",
+                startedAt: new Date().toISOString(),
             })
 
-            logger.progress(i + 1, toIndex.length, `Indexed ${question.questionId} (${durationMs}ms)`)
-        } catch (e) {
-            const error = e instanceof Error ? e.message : String(e)
-            checkpointManager.updatePhase(checkpoint, question.questionId, "indexing", {
-                status: "failed",
-                error,
-            })
-            logger.error(`Failed to index ${question.questionId}: ${error}`)
-            throw new Error(`Indexing failed at ${question.questionId}: ${error}. Fix the issue and resume with the same run ID.`)
+            try {
+                await provider.awaitIndexing(ingestResult, question.containerTag)
+
+                const durationMs = Date.now() - startTime
+                checkpointManager.updatePhase(checkpoint, question.questionId, "indexing", {
+                    status: "completed",
+                    completedAt: new Date().toISOString(),
+                    durationMs,
+                })
+
+                logger.progress(index + 1, total, `Indexed ${question.questionId} (${durationMs}ms)`)
+                return { questionId: question.questionId, durationMs }
+            } catch (e) {
+                const error = e instanceof Error ? e.message : String(e)
+                checkpointManager.updatePhase(checkpoint, question.questionId, "indexing", {
+                    status: "failed",
+                    error,
+                })
+                logger.error(`Failed to index ${question.questionId}: ${error}`)
+                throw new Error(`Indexing failed at ${question.questionId}: ${error}. Fix the issue and resume with the same run ID.`)
+            }
         }
-    }
+    )
 
     logger.success("Indexing phase complete")
 }

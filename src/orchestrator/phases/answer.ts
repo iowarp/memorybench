@@ -12,7 +12,8 @@ import { logger } from "../../utils/logger"
 import { getModelConfig, ModelConfig, DEFAULT_ANSWERING_MODEL } from "../../utils/models"
 import { buildDefaultAnswerPrompt } from "../../prompts/defaults"
 import { buildContextString } from "../../types/prompts"
-import { shouldStop } from "../../server/runState"
+import { ParallelExecutor } from "../parallel"
+import { resolveParallelism } from "../../types/parallelism"
 
 type LanguageModel = ReturnType<typeof createOpenAI> | ReturnType<typeof createAnthropic> | ReturnType<typeof createGoogleGenerativeAI>
 
@@ -66,81 +67,81 @@ export async function runAnswerPhase(
         ? questions.filter(q => questionIds.includes(q.questionId))
         : questions
 
-    const { client, modelConfig } = getAnsweringModel(checkpoint.answeringModel)
+    const pendingQuestions = targetQuestions.filter(q => {
+        const status = checkpointManager.getPhaseStatus(checkpoint, q.questionId, "answer")
+        const searchStatus = checkpointManager.getPhaseStatus(checkpoint, q.questionId, "search")
+        const resultFile = checkpoint.questions[q.questionId]?.phases.search.resultFile
+        return status !== "completed" && searchStatus === "completed" && resultFile && existsSync(resultFile)
+    })
 
-    logger.info(`Generating answers for ${targetQuestions.length} questions using ${modelConfig.displayName} (${modelConfig.id})...`)
-
-    for (let i = 0; i < targetQuestions.length; i++) {
-        // Check for stop signal
-        if (shouldStop(checkpoint.runId)) {
-            logger.info(`Run ${checkpoint.runId} stopped by user`)
-            throw new Error(`Run stopped by user. Resume with the same run ID.`)
-        }
-
-        const question = targetQuestions[i]
-
-        const status = checkpointManager.getPhaseStatus(checkpoint, question.questionId, "answer")
-        if (status === "completed") {
-            logger.debug(`Skipping ${question.questionId} - already answered`)
-            continue
-        }
-
-        const searchStatus = checkpointManager.getPhaseStatus(checkpoint, question.questionId, "search")
-        if (searchStatus !== "completed") {
-            logger.warn(`Skipping ${question.questionId} - not yet searched`)
-            continue
-        }
-
-        const resultFile = checkpoint.questions[question.questionId].phases.search.resultFile
-        if (!resultFile || !existsSync(resultFile)) {
-            logger.warn(`Skipping ${question.questionId} - result file not found`)
-            continue
-        }
-
-        const startTime = Date.now()
-        checkpointManager.updatePhase(checkpoint, question.questionId, "answer", {
-            status: "in_progress",
-            startedAt: new Date().toISOString(),
-        })
-
-        try {
-            const searchData = JSON.parse(readFileSync(resultFile, "utf8"))
-            const context: unknown[] = searchData.results || []
-            const questionDate = checkpoint.questions[question.questionId]?.questionDate
-
-            const prompt = buildAnswerPrompt(question.question, context, questionDate, provider)
-
-            const params: Record<string, unknown> = {
-                model: client(modelConfig.id),
-                prompt,
-                maxTokens: modelConfig.defaultMaxTokens,
-            }
-
-            if (modelConfig.supportsTemperature) {
-                params.temperature = modelConfig.defaultTemperature
-            }
-
-            const { text } = await generateText(params as Parameters<typeof generateText>[0])
-
-            const durationMs = Date.now() - startTime
-            checkpointManager.updatePhase(checkpoint, question.questionId, "answer", {
-                status: "completed",
-                hypothesis: text.trim(),
-                completedAt: new Date().toISOString(),
-                durationMs,
-            })
-
-            logger.progress(i + 1, targetQuestions.length, `Answered ${question.questionId} (${durationMs}ms)`)
-        } catch (e) {
-            const error = e instanceof Error ? e.message : String(e)
-            checkpointManager.updatePhase(checkpoint, question.questionId, "answer", {
-                status: "failed",
-                error,
-            })
-            logger.error(`Failed to answer ${question.questionId}: ${error}`)
-            throw new Error(`Answer failed at ${question.questionId}: ${error}. Fix the issue and resume with the same run ID.`)
-        }
+    if (pendingQuestions.length === 0) {
+        logger.info("No questions pending answering")
+        return
     }
+
+    const { client, modelConfig } = getAnsweringModel(checkpoint.answeringModel)
+    const concurrency = resolveParallelism(
+        "answer",
+        checkpoint.parallelism,
+        provider?.defaultParallelism
+    )
+
+    logger.info(`Generating answers for ${pendingQuestions.length} questions using ${modelConfig.displayName} (concurrency: ${concurrency})...`)
+
+    await ParallelExecutor.executeParallel(
+        pendingQuestions,
+        concurrency,
+        checkpoint.runId,
+        "answer",
+        async ({ item: question, index, total }) => {
+            const resultFile = checkpoint.questions[question.questionId].phases.search.resultFile!
+
+            const startTime = Date.now()
+            checkpointManager.updatePhase(checkpoint, question.questionId, "answer", {
+                status: "in_progress",
+                startedAt: new Date().toISOString(),
+            })
+
+            try {
+                const searchData = JSON.parse(readFileSync(resultFile, "utf8"))
+                const context: unknown[] = searchData.results || []
+                const questionDate = checkpoint.questions[question.questionId]?.questionDate
+
+                const prompt = buildAnswerPrompt(question.question, context, questionDate, provider)
+
+                const params: Record<string, unknown> = {
+                    model: client(modelConfig.id),
+                    prompt,
+                    maxTokens: modelConfig.defaultMaxTokens,
+                }
+
+                if (modelConfig.supportsTemperature) {
+                    params.temperature = modelConfig.defaultTemperature
+                }
+
+                const { text } = await generateText(params as Parameters<typeof generateText>[0])
+
+                const durationMs = Date.now() - startTime
+                checkpointManager.updatePhase(checkpoint, question.questionId, "answer", {
+                    status: "completed",
+                    hypothesis: text.trim(),
+                    completedAt: new Date().toISOString(),
+                    durationMs,
+                })
+
+                logger.progress(index + 1, total, `Answered ${question.questionId} (${durationMs}ms)`)
+                return { questionId: question.questionId, durationMs }
+            } catch (e) {
+                const error = e instanceof Error ? e.message : String(e)
+                checkpointManager.updatePhase(checkpoint, question.questionId, "answer", {
+                    status: "failed",
+                    error,
+                })
+                logger.error(`Failed to answer ${question.questionId}: ${error}`)
+                throw new Error(`Answer failed at ${question.questionId}: ${error}. Fix the issue and resume with the same run ID.`)
+            }
+        }
+    )
 
     logger.success("Answer phase complete")
 }

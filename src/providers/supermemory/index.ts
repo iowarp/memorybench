@@ -7,6 +7,11 @@ import { SUPERMEMORY_PROMPTS } from "./prompts"
 export class SupermemoryProvider implements Provider {
     name = "supermemory"
     prompts = SUPERMEMORY_PROMPTS
+    defaultParallelism = {
+        default: 50,
+        ingest: 100,
+        indexing: 200,
+    }
     private client: Supermemory | null = null
 
     async initialize(config: ProviderConfig): Promise<void> {
@@ -87,9 +92,7 @@ export class SupermemoryProvider implements Provider {
             containerTag: options.containerTag,
             limit: options.limit || 10,
             threshold: options.threshold || 0.3,
-            include: {
-                chunks: true,
-            },
+            searchMode: "hybrid"
         })
 
         return response.results || []

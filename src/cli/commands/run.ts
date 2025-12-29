@@ -1,6 +1,7 @@
 import type { ProviderName } from "../../types/provider"
 import type { BenchmarkName } from "../../types/benchmark"
 import type { PhaseId, SamplingConfig, SampleType } from "../../types/checkpoint"
+import type { ParallelismConfig } from "../../types/parallelism"
 import { PHASE_ORDER, getPhasesFromPhase } from "../../types/checkpoint"
 import { orchestrator, CheckpointManager } from "../../orchestrator"
 import { getAvailableProviders } from "../../providers"
@@ -21,6 +22,7 @@ interface RunArgs {
     sampleType?: SampleType
     force?: boolean
     fromPhase?: PhaseId
+    parallelism?: ParallelismConfig
 }
 
 function generateRunId(): string {
@@ -32,6 +34,7 @@ function generateRunId(): string {
 
 export function parseRunArgs(args: string[]): RunArgs | null {
     const parsed: Partial<RunArgs> = {}
+    const parallelism: Partial<ParallelismConfig> = {}
 
     for (let i = 0; i < args.length; i++) {
         const arg = args[i]
@@ -65,6 +68,18 @@ export function parseRunArgs(args: string[]): RunArgs | null {
                 logger.error(`Invalid phase: ${phase}. Valid phases: ${PHASE_ORDER.join(", ")}`)
                 return null
             }
+        } else if (arg === "--parallelism") {
+            parallelism.default = parseInt(args[++i], 10)
+        } else if (arg === "--parallelism-ingest") {
+            parallelism.ingest = parseInt(args[++i], 10)
+        } else if (arg === "--parallelism-indexing") {
+            parallelism.indexing = parseInt(args[++i], 10)
+        } else if (arg === "--parallelism-search") {
+            parallelism.search = parseInt(args[++i], 10)
+        } else if (arg === "--parallelism-answer") {
+            parallelism.answer = parseInt(args[++i], 10)
+        } else if (arg === "--parallelism-evaluate") {
+            parallelism.evaluate = parseInt(args[++i], 10)
         } else if (arg === "--force") {
             parsed.force = true
         }
@@ -76,6 +91,10 @@ export function parseRunArgs(args: string[]): RunArgs | null {
 
     if (!parsed.runId) {
         parsed.runId = generateRunId()
+    }
+
+    if (Object.keys(parallelism).length > 0) {
+        parsed.parallelism = parallelism as ParallelismConfig
     }
 
     return parsed as RunArgs
@@ -100,6 +119,12 @@ export async function runCommand(args: string[]): Promise<void> {
         console.log("  --sample-type          Sample type: consecutive (default), random")
         console.log("  -l, --limit            Limit total number of questions to process")
         console.log(`  -f, --from-phase       Start from phase: ${PHASE_ORDER.join(", ")}`)
+        console.log("  --parallelism N        Default parallelism for all phases")
+        console.log("  --parallelism-ingest N    Parallelism for ingest phase")
+        console.log("  --parallelism-indexing N  Parallelism for indexing phase")
+        console.log("  --parallelism-search N    Parallelism for search phase")
+        console.log("  --parallelism-answer N    Parallelism for answer phase")
+        console.log("  --parallelism-evaluate N  Parallelism for evaluate phase")
         console.log("  --force                Clear existing checkpoint and start fresh")
         console.log("")
         console.log(`Available models: ${listAvailableModels().join(", ")}`)
@@ -173,6 +198,7 @@ export async function runCommand(args: string[]): Promise<void> {
         runId: parsed.runId,
         answeringModel: parsed.answeringModel,
         sampling,
+        parallelism: parsed.parallelism,
         force: parsed.force,
         phases,
     })

@@ -1,5 +1,6 @@
 import type { UnifiedSession } from "./unified"
 import type { ProviderPrompts } from "./prompts"
+import type { ParallelismConfig } from "./parallelism"
 
 export interface ProviderConfig {
     apiKey: string
@@ -26,6 +27,7 @@ export interface IngestResult {
 export interface Provider {
     name: string
     prompts?: ProviderPrompts
+    defaultParallelism?: ParallelismConfig
     initialize(config: ProviderConfig): Promise<void>
     ingest(sessions: UnifiedSession[], options: IngestOptions): Promise<IngestResult>
     awaitIndexing(result: IngestResult, containerTag: string): Promise<void>

@@ -2,6 +2,7 @@ import type { ProviderName } from "../types/provider"
 import type { BenchmarkName } from "../types/benchmark"
 import type { JudgeName } from "../types/judge"
 import type { RunCheckpoint, SamplingConfig } from "../types/checkpoint"
+import type { ParallelismConfig } from "../types/parallelism"
 import { createProvider } from "../providers"
 import { createBenchmark } from "../benchmarks"
 import { createJudge } from "../judges"
@@ -24,6 +25,7 @@ export interface OrchestratorOptions {
     answeringModel?: string
     limit?: number
     sampling?: SamplingConfig
+    parallelism?: ParallelismConfig
     force?: boolean
     questionIds?: string[]
     phases?: ("ingest" | "indexing" | "search" | "answer" | "evaluate" | "report")[]
@@ -79,6 +81,7 @@ export class Orchestrator {
             answeringModel = "gpt-4o",
             limit,
             sampling,
+            parallelism,
             force = false,
             questionIds,
             phases = ["ingest", "indexing", "search", "answer", "evaluate", "report"],
@@ -124,7 +127,7 @@ export class Orchestrator {
                 benchmarkName,
                 judgeModel,
                 answeringModel,
-                { limit, sampling, status: "initializing" }
+                { limit, sampling, parallelism, status: "initializing" }
             )
             logger.info("Created checkpoint (initializing)")
         }
@@ -259,6 +262,8 @@ export class Orchestrator {
             printReport(report)
         }
 
+        // Flush all pending checkpoint saves before marking as complete
+        await this.checkpointManager.flush(checkpoint.runId)
         this.checkpointManager.updateStatus(checkpoint, "completed")
         logger.success("Run complete!")
     }

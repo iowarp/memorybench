@@ -8,6 +8,7 @@ import { createBenchmark } from "../../benchmarks"
 import type { ProviderName } from "../../types/provider"
 import type { BenchmarkName } from "../../types/benchmark"
 import type { PhaseId, SamplingConfig } from "../../types/checkpoint"
+import type { ParallelismConfig } from "../../types/parallelism"
 import { getPhasesFromPhase, PHASE_ORDER } from "../../types/checkpoint"
 
 const checkpointManager = new CheckpointManager()
@@ -173,8 +174,9 @@ export async function handleRunsRoutes(req: Request, url: URL): Promise<Response
         try {
             const body = await req.json()
             console.log("[API] Start run request body:", JSON.stringify(body, null, 2))
-            const { provider, benchmark, runId, judgeModel, answeringModel, limit, sampling, force, fromPhase, sourceRunId } = body
+            const { provider, benchmark, runId, judgeModel, answeringModel, limit, sampling, parallelism, force, fromPhase, sourceRunId } = body
             console.log("[API] Extracted sampling:", sampling)
+            console.log("[API] Extracted parallelism:", parallelism)
 
             if (!provider || !benchmark || !runId || !judgeModel) {
                 return json({ error: "Missing required fields: provider, benchmark, runId, judgeModel" }, 400)
@@ -230,6 +232,7 @@ export async function handleRunsRoutes(req: Request, url: URL): Promise<Response
                 answeringModel,
                 limit,
                 sampling,
+                parallelism,
                 force: sourceRunId ? false : force,
                 fromPhase: fromPhase as PhaseId | undefined,
             }).finally(() => {
@@ -307,6 +310,7 @@ async function runBenchmark(options: {
     answeringModel?: string
     limit?: number
     sampling?: SamplingConfig
+    parallelism?: ParallelismConfig
     force?: boolean
     fromPhase?: PhaseId
 }) {
@@ -328,6 +332,7 @@ async function runBenchmark(options: {
             answeringModel: options.answeringModel,
             limit: options.limit,
             sampling: options.sampling,
+            parallelism: options.parallelism,
             force: options.force,
             phases,
         })

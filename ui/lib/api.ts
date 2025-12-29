@@ -141,6 +141,15 @@ export interface SamplingConfig {
   limit?: number
 }
 
+export interface ParallelismConfig {
+  default?: number
+  ingest?: number
+  indexing?: number
+  search?: number
+  answer?: number
+  evaluate?: number
+}
+
 export async function startRun(params: {
   provider: string
   benchmark: string
@@ -149,6 +158,7 @@ export async function startRun(params: {
   answeringModel?: string
   limit?: number
   sampling?: SamplingConfig
+  parallelism?: ParallelismConfig
   force?: boolean
   fromPhase?: PhaseId
   sourceRunId?: string
