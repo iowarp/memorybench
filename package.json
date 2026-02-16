@@ -16,6 +16,7 @@
     "ai": "^5.0.115",
     "drizzle-orm": "^0.45.1",
     "mem0ai": "^2.1.38",
+    "@vectorize-io/hindsight-client": "^0.4.11",
     "supermemory": "^4.0.0",
     "zod": "^3.24.4"
   },
