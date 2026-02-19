@@ -9,6 +9,7 @@
         "@ai-sdk/google": "^2.0.49",
         "@ai-sdk/openai": "^2.0.88",
         "@getzep/zep-cloud": "^3.13.0",
+        "@vectorize-io/hindsight-client": "^0.4.11",
         "ai": "^5.0.115",
         "drizzle-orm": "^0.45.1",
         "mem0ai": "^2.1.38",
@@ -142,6 +143,8 @@
     "@types/yargs": ["@types/yargs@17.0.35", "", { "dependencies": { "@types/yargs-parser": "*" } }, "sha512-qUHkeCyQFxMXg79wQfTtfndEC+N9ZZg76HJftDJp+qH2tV7Gj4OJi7l+PiWwJ+pWtW8GwSmqsDj/oymhrTWXjg=="],
 
     "@types/yargs-parser": ["@types/yargs-parser@21.0.3", "", {}, "sha512-I4q9QU9MQv4oEOz4tAHJtNz1cwuLxn2F3xcc2iV5WdqLPpUnj30aUuxt1mAxYTG+oe8CZMV/+6rU4S4gRDzqtQ=="],
+
+    "@vectorize-io/hindsight-client": ["@vectorize-io/hindsight-client@0.4.11", "", {}, "sha512-5xy/ogNE7MngDjZ56n02c7TPz015YB06EaXjtV1VVGSnw5MpFaXHx08fF+9xB/WVFuXbw/mLgtl0c1CqNV7fPA=="],
 
     "@vercel/oidc": ["@vercel/oidc@3.0.5", "", {}, "sha512-fnYhv671l+eTTp48gB4zEsTW/YtRgRPnkI2nT7x6qw5rkI1Lq2hTmQIpHPgyThI0znLK+vX2n9XxKdXZ7BUbbw=="],
 

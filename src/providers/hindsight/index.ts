@@ -46,8 +46,8 @@ export class HindsightProvider implements Provider {
   name = "hindsight"
   prompts = HINDSIGHT_PROMPTS
   concurrency = {
-    default: 10,
-    ingest: 5,
+    default: 5,
+    ingest: 1,
   }
   private baseUrl = ""
   private bankIds: Map<string, string> = new Map()
